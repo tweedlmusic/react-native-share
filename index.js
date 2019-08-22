@@ -36,7 +36,11 @@ type Props = {
   visible: boolean,
   onCancel: () => void,
   children: React.Node,
+  style?: {},
+  overlayStyle?: {},
 };
+
+const shareSheetStyle = {flex: 1};
 
 class ShareSheet extends React.Component<Props> {
   backButtonHandler: () => boolean;
@@ -58,12 +62,18 @@ class ShareSheet extends React.Component<Props> {
     return false;
   }
   render() {
+    const {style = {}, overlayStyle = {}, ...props} = this.props;
     return (
-      <Overlay visible={this.props.visible} {...this.props}>
-        <View style={styles.actionSheetContainer}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={this.props.onCancel} />
+      <Overlay visible={this.props.visible} {...props}>
+        <View style={[styles.actionSheetContainer, overlayStyle]}>
+          <TouchableOpacity
+            style={shareSheetStyle}
+            onPress={this.props.onCancel}
+          />
           <Sheet visible={this.props.visible}>
-            <View style={styles.buttonContainer}>{this.props.children}</View>
+            <View style={[styles.buttonContainer, style]}>
+              {this.props.children}
+            </View>
           </Sheet>
         </View>
       </Overlay>
@@ -94,10 +104,12 @@ type MultipleOptions = {
   showAppsToView?: boolean,
 };
 
-type OpenReturn = { app?: string, dismissedAction?: boolean };
-type ShareSingleReturn = { message: string };
+type OpenReturn = {app?: string, dismissedAction?: boolean};
+type ShareSingleReturn = {message: string};
 
-const requireAndAskPermissions = async (options: Options | MultipleOptions): Promise<any> => {
+const requireAndAskPermissions = async (
+  options: Options | MultipleOptions,
+): Promise<any> => {
   if ((options.url || options.urls) && Platform.OS === 'android') {
     const urls: Array<string> = options.urls || [options.url];
     try {
@@ -169,60 +181,46 @@ class RNShare {
     return new Promise((resolve, reject) => {
       requireAndAskPermissions(options)
         .then(() => {
-          if (Platform.OS === 'ios') {
-            if (options.urls) {
-              // Handle for multiple file share
-              NativeModules.RNShare.open(
-                options,
-                error => {
-                  return reject({ error: error });
-                },
-                (success, activityType) => {
-                  if (success) {
-                    return resolve({
-                      app: activityType,
-                    });
-                  } else if (options.failOnCancel === false) {
-                    return resolve({
-                      dismissedAction: true,
-                    });
-                  } else {
-                    reject({ error: 'User did not share' });
-                  }
-                },
-              );
-            } else {
-              // Handle for single file share
-              ActionSheetIOS.showShareActionSheetWithOptions(
-                options,
-                error => {
-                  return reject({ error: error });
-                },
-                (success, activityType) => {
-                  if (success) {
-                    return resolve({
-                      app: activityType,
-                    });
-                  } else if (options.failOnCancel === false) {
-                    return resolve({
-                      dismissedAction: true,
-                    });
-                  } else {
-                    reject({ error: 'User did not share' });
-                  }
-                },
-              );
-            }
+          if (Platform.OS === 'ios' && !options.urls) {
+            // Handle for single file share
+            ActionSheetIOS.showShareActionSheetWithOptions(
+              options,
+              error => {
+                return reject({error: error});
+              },
+              (success, activityType) => {
+                if (success) {
+                  return resolve({
+                    app: activityType,
+                  });
+                } else if (options.failOnCancel === false) {
+                  return resolve({
+                    dismissedAction: true,
+                  });
+                } else {
+                  reject(new Error('User did not share'));
+                }
+              },
+            );
           } else {
             NativeModules.RNShare.open(
               options,
               e => {
-                return reject({ error: e });
+                return reject({error: e});
               },
-              e => {
-                resolve({
-                  message: e,
-                });
+              (success, activityType) => {
+                if (success) {
+                  return resolve({
+                    app: activityType,
+                    message: activityType,
+                  });
+                } else if (options.failOnCancel === false) {
+                  return resolve({
+                    dismissedAction: true,
+                  });
+                } else {
+                  reject(new Error('User did not share'));
+                }
               },
             );
           }
@@ -239,11 +237,12 @@ class RNShare {
             NativeModules.RNShare.shareSingle(
               options,
               e => {
-                return reject({ error: e });
+                return reject({error: e});
               },
-              e => {
+              (e, activityType) => {
                 return resolve({
                   message: e,
+                  app: activityType,
                 });
               },
             );
@@ -255,20 +254,21 @@ class RNShare {
     }
   }
 
-  static isPackageInstalled (packageName): Promise<ShareSingleReturn> {
+  static isPackageInstalled(packageName: string): Promise<ShareSingleReturn> {
     if (Platform.OS === 'android') {
       return new Promise((resolve, reject) => {
         NativeModules.RNShare.isPackageInstalled(
           packageName,
           e => {
-            return reject({ error: e });
+            return reject({error: e});
           },
           isInstalled => {
             return resolve({
               isInstalled: isInstalled,
+              message: 'Package is Installed',
             });
           },
-        )
+        );
       });
     } else {
       throw new Error('Not implemented');
